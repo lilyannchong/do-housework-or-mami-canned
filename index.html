@@ -1,0 +1,1017 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Charlie's Housework Quest</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            user-select: none;
+            -webkit-user-select: none;
+            background-color: #0f172a;
+        }
+        #canvas-container {
+            width: 100vw;
+            height: 100vh;
+        }
+        .cozy-glass {
+            background: rgba(30, 27, 75, 0.85);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 2px solid rgba(251, 191, 36, 0.4);
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5);
+        }
+        .task-card {
+            background: rgba(30, 41, 59, 0.85);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            transition: all 0.3s ease;
+        }
+        .task-card.completed {
+            border-color: #10b981;
+            background: rgba(16, 185, 129, 0.2);
+        }
+        .task-card.active-room {
+            border-color: #f59e0b;
+            background: rgba(245, 158, 11, 0.25);
+            animation: pulse-ring 1.8s infinite;
+        }
+        .task-card.locked {
+            opacity: 0.4;
+            filter: grayscale(0.8);
+        }
+        @keyframes pulse-ring {
+            0% { transform: scale(0.98); opacity: 0.9; }
+            50% { transform: scale(1.03); opacity: 1; }
+            100% { transform: scale(0.98); opacity: 0.9; }
+        }
+        .pulse-prompt {
+            animation: pulse-ring 1.4s infinite ease-in-out;
+        }
+        /* Mobile Touch Joystick */
+        #touch-joystick-base {
+            width: 100px;
+            height: 100px;
+            background: rgba(255, 255, 255, 0.15);
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            touch-action: none;
+            position: relative;
+        }
+        #touch-joystick-stick {
+            width: 44px;
+            height: 44px;
+            background: #f59e0b;
+            border-radius: 50%;
+            position: absolute;
+            top: 28px;
+            left: 28px;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.4);
+        }
+    </style>
+</head>
+<body class="text-white select-none overflow-hidden">
+
+    <!-- 3D Canvas Container -->
+    <div id="canvas-container" class="cursor-grab active:cursor-grabbing"></div>
+
+    <!-- UI / HUD Overlay -->
+    <div id="ui-layer" class="absolute inset-0 pointer-events-none p-4 flex flex-col justify-between z-10">
+        
+        <!-- Top Stats Bar & Task List -->
+        <div class="flex justify-between items-start gap-4">
+            <div class="cozy-glass rounded-2xl px-5 py-3 pointer-events-auto flex items-center space-x-4">
+                <div class="flex items-center space-x-2">
+                    <span class="text-2xl animate-bounce">⚡</span>
+                    <div>
+                        <div class="text-[10px] uppercase text-amber-300 font-bold tracking-wider">Cozy Aura</div>
+                        <div id="aura-score" class="text-2xl font-black text-amber-400 tracking-wide">100</div>
+                    </div>
+                </div>
+                <div class="h-8 w-px bg-amber-500/30"></div>
+                <div>
+                    <div class="text-[10px] uppercase text-slate-300 font-bold tracking-wider">Progress</div>
+                    <div id="chores-count" class="text-xl font-extrabold text-emerald-400">0 / 4 Chores</div>
+                </div>
+            </div>
+
+            <!-- Task List Drawer -->
+            <div class="cozy-glass rounded-2xl p-3.5 pointer-events-auto max-w-xs w-full transition-all duration-300">
+                <div class="text-xs font-bold text-amber-300 uppercase tracking-wider mb-2 flex justify-between items-center cursor-pointer select-none" onclick="toggleTaskList()">
+                    <span class="flex items-center gap-1.5">🏡 Room Chores <span id="toggle-arrow" class="text-[10px] text-slate-400">▼</span></span>
+                    <span id="room-badge" class="bg-amber-500 text-slate-950 px-2.5 py-0.5 rounded-full text-[10px] font-black">Living Room</span>
+                </div>
+                <div id="task-list-body" class="space-y-1.5 text-xs transition-all duration-300">
+                    <div id="task-vacuum" class="task-card active-room p-2 rounded-lg flex justify-between items-center">
+                        <span>1. 🧹 Rug Vacuum (Living Room)</span>
+                        <span class="status-icon text-[10px] font-bold text-amber-400">⭐ ACTIVE</span>
+                    </div>
+                    <div id="task-kitchen" class="task-card locked p-2 rounded-lg flex justify-between items-center">
+                        <span>2. 🍽️ Scrub Dishes (Kitchen)</span>
+                        <span class="status-icon text-[10px] font-bold text-slate-400">🔒 LOCKED</span>
+                    </div>
+                    <div id="task-laundry" class="task-card locked p-2 rounded-lg flex justify-between items-center">
+                        <span>3. 🧺 Fold Laundry (Bedroom)</span>
+                        <span class="status-icon text-[10px] font-bold text-slate-400">🔒 LOCKED</span>
+                    </div>
+                    <div id="task-trash" class="task-card locked p-2 rounded-lg flex justify-between items-center">
+                        <span>4. 🌿 Tidy Garden (Patio)</span>
+                        <span class="status-icon text-[10px] font-bold text-slate-400">🔒 LOCKED</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Center Prompt (Interaction Target) -->
+        <div id="interact-prompt" class="self-center mb-16 bg-amber-400 text-slate-950 font-black text-base md:text-lg px-8 py-3.5 rounded-full shadow-2xl border-4 border-white pulse-prompt opacity-0 transition-all duration-200 pointer-events-auto cursor-pointer flex items-center space-x-2 active:scale-95 hover:bg-amber-300">
+            <span>✨ TAP OR PRESS [E] TO START TASK!</span>
+        </div>
+
+        <!-- Touch Controls for Mobile Screen -->
+        <div class="flex justify-between items-end w-full">
+            <div id="touch-controls" class="pointer-events-auto hidden mb-2 ml-2">
+                <div id="touch-joystick-base">
+                    <div id="touch-joystick-stick"></div>
+                </div>
+            </div>
+            
+            <button id="interact-btn" class="pointer-events-auto hidden bg-amber-400 text-slate-950 font-black rounded-full w-20 h-20 shadow-2xl border-4 border-white active:scale-90 transition-transform flex flex-col items-center justify-center text-xs mb-2 mr-2">
+                <span class="text-2xl">✨</span>
+                <span class="font-black tracking-wider">INTERACT</span>
+            </button>
+        </div>
+    </div>
+
+    <!-- Crosshair for First-Person Perspective -->
+    <div class="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none z-20 flex items-center justify-center">
+        <div class="w-2.5 h-2.5 bg-amber-400/80 rounded-full border border-slate-900"></div>
+    </div>
+
+    <!-- Interactive Mini-Game Overlay -->
+    <div id="minigame-overlay" class="fixed inset-0 z-50 flex items-center justify-center hidden p-4 bg-slate-950/80 backdrop-blur-md">
+        <div class="bg-slate-900 border-2 border-amber-400 rounded-3xl p-6 max-w-lg w-full shadow-2xl relative flex flex-col items-center">
+            
+            <!-- Close Button -->
+            <button onclick="closeMiniGame()" class="absolute top-4 right-4 bg-slate-800 hover:bg-slate-700 text-slate-300 w-9 h-9 rounded-full flex items-center justify-center font-bold border border-slate-600">✕</button>
+
+            <!-- Mini Game Header -->
+            <h2 id="mg-title" class="text-2xl font-black text-amber-400 tracking-wide mb-1 text-center">Chore Mini-Game</h2>
+            <p id="mg-desc" class="text-xs text-slate-300 mb-4 text-center">Perform the task quickly to earn your Aura points!</p>
+
+            <!-- Dynamic Mini-Game Interactive Canvas -->
+            <div id="mg-canvas-container" class="relative w-full h-64 bg-slate-950 rounded-2xl border border-slate-800 overflow-hidden flex items-center justify-center">
+                <!-- Mini-Game dynamic elements render here -->
+            </div>
+
+            <!-- Footer Progress Bar -->
+            <div class="w-full mt-4 flex justify-between items-center gap-4">
+                <div class="w-full bg-slate-800 rounded-full h-4 overflow-hidden border border-slate-700">
+                    <div id="mg-progress" class="bg-gradient-to-r from-amber-400 to-emerald-400 h-full w-0 transition-all duration-150"></div>
+                </div>
+                <div id="mg-score-val" class="text-xs font-bold text-emerald-400 whitespace-nowrap">0%</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Victory Modal -->
+    <div id="victory-modal" class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/85 backdrop-blur-md hidden p-4">
+        <div class="bg-slate-900 border-2 border-emerald-400 rounded-3xl p-8 max-w-md w-full shadow-2xl text-center flex flex-col items-center">
+            <div class="text-6xl mb-3 animate-bounce">👑</div>
+            <h2 class="text-3xl font-black text-amber-400 mb-2">HOME SPICK & SPAN!</h2>
+            <p class="text-sm text-slate-300 mb-6">Charlie completed all house chores! The house is glowing, sparkling clean, and your aura is off the charts!</p>
+
+            <div class="bg-slate-800/80 rounded-2xl p-4 w-full mb-6 border border-slate-700">
+                <div class="text-xs uppercase text-slate-400 font-bold mb-1">Total Aura Score</div>
+                <div id="final-aura" class="text-4xl font-black text-emerald-400">200</div>
+            </div>
+
+            <button onclick="resetGame()" class="w-full bg-gradient-to-r from-amber-400 to-amber-500 hover:from-amber-500 hover:to-amber-600 text-slate-950 font-black py-3 px-6 rounded-xl shadow-lg transition-transform hover:scale-105">
+                CLEAN AGAIN 🔥
+            </button>
+        </div>
+    </div>
+
+    <!-- Three.js Library -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
+    <script>
+        /* =========================================================================
+           1. GAME STATE & SEQUENTIAL PROGRESSION
+           ========================================================================= */
+        const gameState = {
+            aura: 100,
+            choresCompleted: 0,
+            activeChore: null,
+            roomOrder: ['vacuum', 'kitchen', 'laundry', 'trash'],
+            currentRoomIdx: 0,
+            chores: {
+                vacuum: { id: 'vacuum', title: 'Vacuum Dirt Piles', room: 'Living Room', done: false, pos: new THREE.Vector3(-4.5, 0, -4.5) },
+                kitchen: { id: 'kitchen', title: 'Scrub Dishes', room: 'Kitchen', done: false, pos: new THREE.Vector3(4.5, 0, -4.5) },
+                laundry: { id: 'laundry', title: 'Sort Laundry', room: 'Bedroom', done: false, pos: new THREE.Vector3(-4.5, 0, 4.5) },
+                trash: { id: 'trash', title: 'Sort Recycling', room: 'Patio', done: false, pos: new THREE.Vector3(4.5, 0, 4.5) }
+            }
+        };
+
+        /* =========================================================================
+           2. CONTROLS & SYNTHESIZED SFX AUDIO
+           ========================================================================= */
+        const keys = {};
+        const moveSpeed = 0.12;
+        let yaw = -Math.PI / 4;
+        let pitch = 0;
+        let isDragging = false;
+        let previousMousePosition = { x: 0, y: 0 };
+
+        window.addEventListener('keydown', (e) => {
+            keys[e.key.toLowerCase()] = true;
+            if (e.key.toLowerCase() === 'e') {
+                triggerInteraction();
+            }
+        });
+
+        window.addEventListener('keyup', (e) => {
+            keys[e.key.toLowerCase()] = false;
+        });
+
+        // Mouse Look Dragging for First Person View
+        window.addEventListener('mousedown', (e) => {
+            if (e.target.closest('#ui-layer') || e.target.closest('#minigame-overlay')) return;
+            isDragging = true;
+            previousMousePosition = { x: e.clientX, y: e.clientY };
+        });
+
+        window.addEventListener('mousemove', (e) => {
+            if (!isDragging) return;
+            const deltaX = e.clientX - previousMousePosition.x;
+            const deltaY = e.clientY - previousMousePosition.y;
+
+            yaw -= deltaX * 0.005;
+            pitch -= deltaY * 0.005;
+            pitch = Math.max(-Math.PI / 3, Math.min(Math.PI / 3, pitch));
+
+            previousMousePosition = { x: e.clientX, y: e.clientY };
+        });
+
+        window.addEventListener('mouseup', () => { isDragging = false; });
+
+        // Web Audio Synthesizer
+        const sfx = {
+            ctx: null,
+            init() {
+                if (!this.ctx) {
+                    this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+                }
+            },
+            playTone(freq, type, duration, gainVal = 0.1) {
+                this.init();
+                if (!this.ctx) return;
+                try {
+                    const osc = this.ctx.createOscillator();
+                    const gain = this.ctx.createGain();
+                    osc.type = type;
+                    osc.frequency.setValueAtTime(freq, this.ctx.currentTime);
+                    gain.gain.setValueAtTime(gainVal, this.ctx.currentTime);
+                    gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + duration);
+                    osc.connect(gain);
+                    gain.connect(this.ctx.destination);
+                    osc.start();
+                    osc.stop(this.ctx.currentTime + duration);
+                } catch(e) {}
+            },
+            step() { this.playTone(180, 'sine', 0.04, 0.02); },
+            interact() { this.playTone(440, 'triangle', 0.15, 0.1); },
+            clean() { this.playTone(620, 'sine', 0.08, 0.08); },
+            complete() {
+                this.playTone(523.25, 'sine', 0.12, 0.12);
+                setTimeout(() => this.playTone(659.25, 'sine', 0.15, 0.12), 90);
+                setTimeout(() => this.playTone(783.99, 'sine', 0.25, 0.15), 180);
+            }
+        };
+
+        /* =========================================================================
+           3. THREE.JS SCENE & FIRST PERSON CAMERA
+           ========================================================================= */
+        const container = document.getElementById('canvas-container');
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x0a0f1d);
+        scene.fog = new THREE.FogExp2(0x0a0f1d, 0.02);
+
+        const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        renderer.toneMappingExposure = 1.15;
+        container.appendChild(renderer.domElement);
+
+        /* =========================================================================
+           3B. PROCEDURAL TEXTURE GENERATORS
+           ========================================================================= */
+        function createWoodTexture() {
+            const canvas = document.createElement('canvas');
+            canvas.width = 512; canvas.height = 512;
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = '#652b0d';
+            ctx.fillRect(0, 0, 512, 512);
+            
+            // Draw Planks
+            ctx.strokeStyle = '#421a08';
+            ctx.lineWidth = 4;
+            for (let i = 0; i <= 512; i += 64) {
+                ctx.beginPath(); ctx.moveTo(0, i); ctx.lineTo(512, i); ctx.stroke();
+            }
+            // Draw Grain Lines
+            ctx.fillStyle = 'rgba(40, 15, 5, 0.15)';
+            for (let j = 0; j < 300; j++) {
+                ctx.fillRect(Math.random() * 512, Math.random() * 512, Math.random() * 80 + 20, 2);
+            }
+            const tex = new THREE.CanvasTexture(canvas);
+            tex.wrapS = THREE.RepeatWrapping;
+            tex.wrapT = THREE.RepeatWrapping;
+            tex.repeat.set(4, 4);
+            return tex;
+        }
+
+        function createTileTexture() {
+            const canvas = document.createElement('canvas');
+            canvas.width = 512; canvas.height = 512;
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = '#e2e8f0';
+            ctx.fillRect(0, 0, 512, 512);
+            
+            ctx.strokeStyle = '#94a3b8';
+            ctx.lineWidth = 6;
+            for (let i = 0; i <= 512; i += 128) {
+                ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i, 512); ctx.stroke();
+                ctx.beginPath(); ctx.moveTo(0, i); ctx.lineTo(512, i); ctx.stroke();
+            }
+            const tex = new THREE.CanvasTexture(canvas);
+            tex.wrapS = THREE.RepeatWrapping;
+            tex.wrapT = THREE.RepeatWrapping;
+            tex.repeat.set(3, 3);
+            return tex;
+        }
+
+        function createRugTexture() {
+            const canvas = document.createElement('canvas');
+            canvas.width = 256; canvas.height = 256;
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = '#1e1b4b';
+            ctx.fillRect(0, 0, 256, 256);
+            ctx.strokeStyle = '#f59e0b';
+            ctx.lineWidth = 12;
+            ctx.strokeRect(16, 16, 224, 224);
+            ctx.lineWidth = 6;
+            ctx.strokeRect(32, 32, 192, 192);
+            
+            const tex = new THREE.CanvasTexture(canvas);
+            return tex;
+        }
+
+        const woodTexture = createWoodTexture();
+        const tileTexture = createTileTexture();
+        const rugTexture = createRugTexture();
+
+        // Lights
+        const ambientLight = new THREE.AmbientLight(0xffedd5, 0.45);
+        scene.add(ambientLight);
+
+        const mainDirLight = new THREE.DirectionalLight(0xfff7ed, 0.85);
+        mainDirLight.position.set(15, 25, 15);
+        mainDirLight.castShadow = true;
+        mainDirLight.shadow.mapSize.width = 2048;
+        mainDirLight.shadow.mapSize.height = 2048;
+        mainDirLight.shadow.bias = -0.0001;
+        scene.add(mainDirLight);
+
+        function addRoomLamp(x, y, z, color, intensity = 1.8) {
+            const pLight = new THREE.PointLight(color, intensity, 12);
+            pLight.position.set(x, y, z);
+            pLight.castShadow = true;
+            pLight.shadow.mapSize.width = 1024;
+            pLight.shadow.mapSize.height = 1024;
+            scene.add(pLight);
+
+            // Glowing Light Fixture Bulb
+            const bulb = new THREE.Mesh(
+                new THREE.SphereGeometry(0.18, 16, 16),
+                new THREE.MeshBasicMaterial({ color: color })
+            );
+            bulb.position.set(x, y, z);
+            scene.add(bulb);
+        }
+
+        addRoomLamp(-4.5, 2.5, -4.5, 0xfbbf24, 2.0); // Warm Living Room Ceiling Lamp
+        addRoomLamp(4.5, 2.5, -4.5, 0xfff176, 2.2);  // Bright Kitchen Lamp
+        addRoomLamp(-4.5, 2.5, 4.5, 0xf472b6, 1.8);  // Cozy Pink Bedroom Lamp
+        addRoomLamp(4.5, 2.5, 4.5, 0x34d399, 1.9);   // Patio Garden Soft Green Glow
+
+        /* =========================================================================
+           4. DETAILED REALISTIC FURNITURE & HOUSE DECOR
+           ========================================================================= */
+        const colliders = [];
+
+        function buildWall(x, y, z, w, h, d, color = 0x334155) {
+            const wallMat = new THREE.MeshStandardMaterial({ 
+                color: color, 
+                roughness: 0.85,
+                metalness: 0.05
+            });
+            const wall = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), wallMat);
+            wall.position.set(x, y, z);
+            wall.castShadow = true;
+            wall.receiveShadow = true;
+            scene.add(wall);
+            colliders.push(wall);
+            return wall;
+        }
+
+        // Textured Multi-Zone Floor
+        const floorWoodMat = new THREE.MeshStandardMaterial({ map: woodTexture, roughness: 0.35, metalness: 0.1 });
+        const floorTileMat = new THREE.MeshStandardMaterial({ map: tileTexture, roughness: 0.25, metalness: 0.2 });
+
+        const floor1 = new THREE.Mesh(new THREE.PlaneGeometry(10, 10), floorWoodMat);
+        floor1.rotation.x = -Math.PI / 2; floor1.position.set(-5, 0, -5); floor1.receiveShadow = true; scene.add(floor1);
+
+        const floor2 = new THREE.Mesh(new THREE.PlaneGeometry(10, 10), floorTileMat);
+        floor2.rotation.x = -Math.PI / 2; floor2.position.set(5, 0, -5); floor2.receiveShadow = true; scene.add(floor2);
+
+        const floor3 = new THREE.Mesh(new THREE.PlaneGeometry(10, 10), floorWoodMat);
+        floor3.rotation.x = -Math.PI / 2; floor3.position.set(-5, 0, 5); floor3.receiveShadow = true; scene.add(floor3);
+
+        const floor4 = new THREE.Mesh(new THREE.PlaneGeometry(10, 10), floorTileMat);
+        floor4.rotation.x = -Math.PI / 2; floor4.position.set(5, 0, 5); floor4.receiveShadow = true; scene.add(floor4);
+
+        // Living Room Plush Area Rug
+        const rugMesh = new THREE.Mesh(new THREE.PlaneGeometry(4.5, 4.5), new THREE.MeshStandardMaterial({ map: rugTexture, roughness: 0.9 }));
+        rugMesh.rotation.x = -Math.PI / 2;
+        rugMesh.position.set(-5, 0.01, -5);
+        rugMesh.receiveShadow = true;
+        scene.add(rugMesh);
+
+        // Outer & Partition Walls
+        buildWall(0, 1.5, -10, 20, 3, 0.6, 0x1e293b);
+        buildWall(0, 1.5, 10, 20, 3, 0.6, 0x1e293b);
+        buildWall(-10, 1.5, 0, 0.6, 3, 20, 0x1e293b);
+        buildWall(10, 1.5, 0, 0.6, 3, 20, 0x1e293b);
+
+        buildWall(-7.5, 1.5, 0, 5, 3, 0.4, 0x475569);
+        buildWall(-1.5, 1.5, 0, 1, 3, 0.4, 0x475569);
+        buildWall(7.5, 1.5, 0, 5, 3, 0.4, 0x475569);
+        buildWall(1.5, 1.5, 0, 1, 3, 0.4, 0x475569);
+        buildWall(0, 1.5, -7.5, 0.4, 3, 5, 0x475569);
+        buildWall(0, 1.5, -1.5, 0.4, 3, 1, 0x475569);
+        buildWall(0, 1.5, 7.5, 0.4, 3, 5, 0x475569);
+        buildWall(0, 1.5, 1.5, 0.4, 3, 1, 0x475569);
+
+        // --- FURNITURE MODELS WITH TEXTURE & SHINE ---
+        // 1. Living Room Sofa
+        function buildSofa(x, z) {
+            const sofaGroup = new THREE.Group();
+            const fabricMat = new THREE.MeshStandardMaterial({ color: 0x0284c7, roughness: 0.85, bumpScale: 0.05 });
+            const cushionMat = new THREE.MeshStandardMaterial({ color: 0x38bdf8, roughness: 0.7 });
+
+            const base = new THREE.Mesh(new THREE.BoxGeometry(2.4, 0.4, 1.1), fabricMat);
+            base.position.set(0, 0.2, 0); base.castShadow = true; base.receiveShadow = true;
+            sofaGroup.add(base);
+
+            const seat1 = new THREE.Mesh(new THREE.BoxGeometry(1.1, 0.2, 0.8), cushionMat);
+            seat1.position.set(-0.55, 0.4, 0.1); seat1.castShadow = true;
+            sofaGroup.add(seat1);
+
+            const seat2 = new THREE.Mesh(new THREE.BoxGeometry(1.1, 0.2, 0.8), cushionMat);
+            seat2.position.set(0.55, 0.4, 0.1); seat2.castShadow = true;
+            sofaGroup.add(seat2);
+
+            const back = new THREE.Mesh(new THREE.BoxGeometry(2.4, 0.8, 0.3), fabricMat);
+            back.position.set(0, 0.7, -0.4); back.castShadow = true;
+            sofaGroup.add(back);
+
+            const armL = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.6, 1.1), fabricMat);
+            armL.position.set(-1.2, 0.5, 0); armL.castShadow = true;
+            sofaGroup.add(armL);
+
+            const armR = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.6, 1.1), fabricMat);
+            armR.position.set(1.2, 0.5, 0); armR.castShadow = true;
+            sofaGroup.add(armR);
+
+            sofaGroup.position.set(x, 0, z);
+            scene.add(sofaGroup);
+            colliders.push(base);
+        }
+        buildSofa(-7, -7);
+
+        // 2. Coffee Table & TV Unit with Screen Glow
+        function buildTVUnit(x, z) {
+            const group = new THREE.Group();
+            const woodMat = new THREE.MeshStandardMaterial({ color: 0x3f1d0b, roughness: 0.3, metalness: 0.1 });
+            const screenMat = new THREE.MeshStandardMaterial({ color: 0x0284c7, roughness: 0.1, emissive: 0x0369a1, emissiveIntensity: 0.4 });
+
+            const stand = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.5, 0.6), woodMat);
+            stand.position.set(0, 0.25, 0); stand.castShadow = true; stand.receiveShadow = true;
+            group.add(stand);
+
+            const tv = new THREE.Mesh(new THREE.BoxGeometry(1.8, 1.0, 0.1), screenMat);
+            tv.position.set(0, 1.0, 0); tv.castShadow = true;
+            group.add(tv);
+
+            group.position.set(x, 0, z);
+            scene.add(group);
+            colliders.push(stand);
+        }
+        buildTVUnit(-2.5, -8.8);
+
+        // 3. Kitchen Counter & Metallic Faucet
+        function buildKitchenCounters(x, z) {
+            const group = new THREE.Group();
+            const counterMat = new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.1, metalness: 0.1 });
+            const baseMat = new THREE.MeshStandardMaterial({ color: 0x0369a1, roughness: 0.4 });
+            const metalMat = new THREE.MeshStandardMaterial({ color: 0xcbd5e1, metalness: 0.8, roughness: 0.2 });
+
+            const base = new THREE.Mesh(new THREE.BoxGeometry(3.2, 0.85, 0.8), baseMat);
+            base.position.set(0, 0.425, 0); base.castShadow = true;
+            group.add(base);
+
+            const top = new THREE.Mesh(new THREE.BoxGeometry(3.3, 0.1, 0.85), counterMat);
+            top.position.set(0, 0.9, 0); top.castShadow = true; top.receiveShadow = true;
+            group.add(top);
+
+            const faucet = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.3, 12), metalMat);
+            faucet.position.set(0, 1.1, 0); faucet.castShadow = true;
+            group.add(faucet);
+
+            const fridge = new THREE.Mesh(new THREE.BoxGeometry(1.0, 2.0, 0.9), metalMat);
+            fridge.position.set(2.2, 1.0, 0); fridge.castShadow = true;
+            group.add(fridge);
+
+            group.position.set(x, 0, z);
+            scene.add(group);
+            colliders.push(base);
+            colliders.push(fridge);
+        }
+        buildKitchenCounters(6.0, -8.5);
+
+        // 4. Bedroom Bed & Soft Nightstand Lamp
+        function buildBed(x, z) {
+            const group = new THREE.Group();
+            const frameMat = new THREE.MeshStandardMaterial({ color: 0x581c87, roughness: 0.4 });
+            const sheetMat = new THREE.MeshStandardMaterial({ color: 0xf472b6, roughness: 0.6 });
+            const pillowMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.8 });
+
+            const frame = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.4, 2.2), frameMat);
+            frame.position.set(0, 0.2, 0); frame.castShadow = true;
+            group.add(frame);
+
+            const mattress = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.35, 2.1), sheetMat);
+            mattress.position.set(0, 0.45, 0); mattress.castShadow = true;
+            group.add(mattress);
+
+            const headboard = new THREE.Mesh(new THREE.BoxGeometry(1.8, 1.1, 0.2), frameMat);
+            headboard.position.set(0, 0.55, 1.0); headboard.castShadow = true;
+            group.add(headboard);
+
+            const pillow = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.15, 0.4), pillowMat);
+            pillow.position.set(0, 0.65, 0.7); pillow.castShadow = true;
+            group.add(pillow);
+
+            group.position.set(x, 0, z);
+            scene.add(group);
+            colliders.push(frame);
+        }
+        buildBed(-7.0, 7.5);
+
+        // Doors System
+        const doors = {};
+        function createRoomDoor(id, x, z, rotationY) {
+            const pivot = new THREE.Group();
+            pivot.position.set(x, 0, z);
+
+            const doorMesh = new THREE.Mesh(
+                new THREE.BoxGeometry(1.8, 2.4, 0.15),
+                new THREE.MeshStandardMaterial({ color: 0xef4444, roughness: 0.3, metalness: 0.1 })
+            );
+            doorMesh.position.set(0.9, 1.2, 0);
+            doorMesh.castShadow = true;
+            pivot.add(doorMesh);
+
+            pivot.rotation.y = rotationY;
+            scene.add(pivot);
+
+            doors[id] = { pivot, mesh: doorMesh, open: false, targetAngle: 0, collider: doorMesh };
+            colliders.push(doorMesh);
+        }
+
+        createRoomDoor('kitchenDoor', 0, -4.5, Math.PI / 2);
+        createRoomDoor('bedroomDoor', -4.5, 0, 0);
+        createRoomDoor('patioDoor', 4.5, 0, 0);
+
+        /* =========================================================================
+           5. INTERACTIVE CHORE STATIONS
+           ========================================================================= */
+        const taskMarkers = {};
+
+        function createChoreStation(key, data) {
+            const group = new THREE.Group();
+            
+            const ring = new THREE.Mesh(
+                new THREE.RingGeometry(1.2, 1.8, 32),
+                new THREE.MeshBasicMaterial({ color: 0xf59e0b, side: THREE.DoubleSide, transparent: true, opacity: 0.8 })
+            );
+            ring.rotation.x = -Math.PI / 2;
+            ring.position.y = 0.02;
+            group.add(ring);
+
+            const box = new THREE.Mesh(
+                new THREE.BoxGeometry(0.8, 0.8, 0.8),
+                new THREE.MeshStandardMaterial({ color: 0xf59e0b, emissive: 0xd97706, emissiveIntensity: 0.6, roughness: 0.2 })
+            );
+            box.position.y = 1.0;
+            box.castShadow = true;
+            group.add(box);
+
+            group.position.copy(data.pos);
+            scene.add(group);
+
+            taskMarkers[key] = { group, box, ring, data };
+        }
+
+        Object.keys(gameState.chores).forEach(key => {
+            createChoreStation(key, gameState.chores[key]);
+        });
+
+        /* =========================================================================
+           6. FIRST-PERSON PLAYER MOVEMENT & CAMERA POSITIONING
+           ========================================================================= */
+        const playerPos = new THREE.Vector3(-4.5, 1.5, -4.5); // Camera Eye Level
+
+        function toggleTaskList() {
+            const body = document.getElementById('task-list-body');
+            const arrow = document.getElementById('toggle-arrow');
+            if (body.classList.contains('hidden')) {
+                body.classList.remove('hidden');
+                arrow.innerText = '▼';
+            } else {
+                body.classList.add('hidden');
+                arrow.innerText = '▲';
+            }
+        }
+
+        let nearestChoreKey = null;
+        function checkProximityPrompts() {
+            const prompt = document.getElementById('interact-prompt');
+            nearestChoreKey = null;
+
+            const currentKey = gameState.roomOrder[gameState.currentRoomIdx];
+            if (currentKey && !gameState.chores[currentKey].done) {
+                const marker = taskMarkers[currentKey];
+                const dist = playerPos.distanceTo(marker.data.pos);
+                if (dist < 5.5) {
+                    nearestChoreKey = currentKey;
+                }
+            }
+
+            if (nearestChoreKey) {
+                prompt.classList.remove('opacity-0');
+                prompt.classList.remove('pointer-events-none');
+            } else {
+                prompt.classList.add('opacity-0');
+                prompt.classList.add('pointer-events-none');
+            }
+        }
+
+        function triggerInteraction() {
+            if (nearestChoreKey) {
+                sfx.interact();
+                startMiniGame(nearestChoreKey);
+            }
+        }
+
+        const promptBtn = document.getElementById('interact-prompt');
+        promptBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            sfx.init();
+            triggerInteraction();
+        });
+
+        function checkCollisions(targetPos) {
+            const pBox = new THREE.Box3().setFromCenterAndSize(
+                targetPos.clone(),
+                new THREE.Vector3(0.7, 1.5, 0.7)
+            );
+
+            for (let col of colliders) {
+                const cBox = new THREE.Box3().setFromObject(col);
+                if (pBox.intersectsBox(cBox)) return true;
+            }
+            return false;
+        }
+
+        function updatePlayerMovement() {
+            if (!document.getElementById('minigame-overlay').classList.contains('hidden')) return;
+
+            let forward = 0;
+            let side = 0;
+
+            if (keys['w'] || keys['arrowup']) forward += 1;
+            if (keys['s'] || keys['arrowdown']) forward -= 1;
+            if (keys['a'] || keys['arrowleft']) side -= 1;
+            if (keys['d'] || keys['arrowright']) side += 1;
+
+            if (forward !== 0 || side !== 0) {
+                const dirX = Math.sin(yaw) * forward + Math.cos(yaw) * side;
+                const dirZ = Math.cos(yaw) * forward - Math.sin(yaw) * side;
+
+                const norm = Math.sqrt(dirX * dirX + dirZ * dirZ);
+                const nextX = playerPos.clone().add(new THREE.Vector3((dirX / norm) * moveSpeed, 0, 0));
+                if (!checkCollisions(nextX)) playerPos.x = nextX.x;
+
+                const nextZ = playerPos.clone().add(new THREE.Vector3(0, 0, (dirZ / norm) * moveSpeed));
+                if (!checkCollisions(nextZ)) playerPos.z = nextZ.z;
+
+                sfx.step();
+            }
+
+            // Update First-Person Camera Position & Orientation
+            camera.position.copy(playerPos);
+            
+            const targetX = playerPos.x - Math.sin(yaw) * Math.cos(pitch);
+            const targetY = playerPos.y + Math.sin(pitch);
+            const targetZ = playerPos.z - Math.cos(yaw) * Math.cos(pitch);
+            camera.lookAt(targetX, targetY, targetZ);
+
+            updateRoomTracker();
+            checkProximityPrompts();
+        }
+
+        function updateRoomTracker() {
+            const px = playerPos.x;
+            const pz = playerPos.z;
+            const badge = document.getElementById('room-badge');
+
+            if (px < 0 && pz < 0) badge.innerText = "Living Room";
+            else if (px >= 0 && pz < 0) badge.innerText = "Kitchen";
+            else if (px < 0 && pz >= 0) badge.innerText = "Bedroom";
+            else badge.innerText = "Patio Garden";
+        }
+
+        /* =========================================================================
+           7. MINI-GAME SYSTEM & UNLOCKING FIX
+           ========================================================================= */
+        let mgProgressVal = 0;
+        let activeMgKey = null;
+
+        function startMiniGame(key) {
+            activeMgKey = key;
+            mgProgressVal = 0;
+            const mg = gameState.chores[key];
+
+            document.getElementById('mg-title').innerText = mg.title;
+            document.getElementById('mg-desc').innerText = `Clean and tidy up in the ${mg.room}!`;
+            document.getElementById('minigame-overlay').classList.remove('hidden');
+
+            const container = document.getElementById('mg-canvas-container');
+            container.innerHTML = '';
+
+            updateMgProgress(0);
+
+            if (key === 'vacuum') setupVacuumMiniGame(container);
+            else if (key === 'kitchen') setupDishScrubMiniGame(container);
+            else if (key === 'laundry') setupLaundrySortMiniGame(container);
+            else if (key === 'trash') setupTrashRecycleMiniGame(container);
+        }
+
+        function updateMgProgress(val) {
+            mgProgressVal = Math.min(100, Math.max(0, val));
+            document.getElementById('mg-progress').style.width = `${mgProgressVal}%`;
+            document.getElementById('mg-score-val').innerText = `${Math.round(mgProgressVal)}%`;
+
+            if (mgProgressVal >= 100) {
+                setTimeout(finishMiniGame, 300);
+            }
+        }
+
+        function finishMiniGame() {
+            sfx.complete();
+            gameState.chores[activeMgKey].done = true;
+            gameState.choresCompleted += 1;
+            gameState.aura += 25;
+
+            taskMarkers[activeMgKey].group.visible = false;
+
+            if (activeMgKey === 'vacuum') unlockDoor('kitchenDoor');
+            else if (activeMgKey === 'kitchen') unlockDoor('bedroomDoor');
+            else if (activeMgKey === 'laundry') unlockDoor('patioDoor');
+
+            if (gameState.currentRoomIdx < gameState.roomOrder.length - 1) {
+                gameState.currentRoomIdx++;
+            }
+
+            updateTaskListUI();
+
+            document.getElementById('aura-score').innerText = gameState.aura;
+            document.getElementById('chores-count').innerText = `${gameState.choresCompleted} / 4 Chores`;
+
+            closeMiniGame();
+
+            if (gameState.choresCompleted >= 4) {
+                setTimeout(showVictoryModal, 600);
+            }
+        }
+
+        function unlockDoor(doorId) {
+            if (doors[doorId] && !doors[doorId].open) {
+                doors[doorId].open = true;
+                doors[doorId].targetAngle = Math.PI / 2 + 0.5;
+                doors[doorId].mesh.material.color.setHex(0x10b981);
+                
+                const colIdx = colliders.indexOf(doors[doorId].collider);
+                if (colIdx > -1) colliders.splice(colIdx, 1);
+            }
+        }
+
+        function updateTaskListUI() {
+            gameState.roomOrder.forEach((key, idx) => {
+                const taskEl = document.getElementById(`task-${key}`);
+                if (!taskEl) return;
+
+                if (gameState.chores[key].done) {
+                    taskEl.className = "task-card completed p-2 rounded-lg flex justify-between items-center";
+                    taskEl.querySelector('.status-icon').innerText = '✅ DONE';
+                } else if (idx === gameState.currentRoomIdx) {
+                    taskEl.className = "task-card active-room p-2 rounded-lg flex justify-between items-center";
+                    taskEl.querySelector('.status-icon').innerText = '⭐ ACTIVE';
+                } else {
+                    taskEl.className = "task-card locked p-2 rounded-lg flex justify-between items-center";
+                    taskEl.querySelector('.status-icon').innerText = '🔒 LOCKED';
+                }
+            });
+        }
+
+        function closeMiniGame() {
+            document.getElementById('minigame-overlay').classList.add('hidden');
+        }
+
+        /* =========================================================================
+           8. MINI-GAMES SETUP
+           ========================================================================= */
+        function setupVacuumMiniGame(container) {
+            container.innerHTML = `<div id="dirt-area" class="w-full h-full relative cursor-crosshair bg-amber-950/30 flex items-center justify-center"></div>`;
+            const area = document.getElementById('dirt-area');
+            let cleaned = 0;
+            const total = 6;
+
+            for (let i = 0; i < total; i++) {
+                const dirt = document.createElement('div');
+                dirt.className = 'absolute w-12 h-12 bg-amber-800/80 rounded-full blur-sm hover:scale-110 transition-transform cursor-pointer flex items-center justify-center text-xs';
+                dirt.innerText = '💩';
+                dirt.style.top = `${15 + Math.random() * 65}%`;
+                dirt.style.left = `${15 + Math.random() * 65}%`;
+
+                dirt.onclick = () => {
+                    sfx.clean();
+                    dirt.remove();
+                    cleaned++;
+                    updateMgProgress((cleaned / total) * 100);
+                };
+                area.appendChild(dirt);
+            }
+        }
+
+        function setupDishScrubMiniGame(container) {
+            container.innerHTML = `
+                <div class="relative w-48 h-48 rounded-full bg-slate-200 border-8 border-slate-400 flex items-center justify-center overflow-hidden shadow-inner cursor-pointer" id="plate">
+                    <div id="stain" class="absolute inset-2 bg-amber-900/70 rounded-full transition-opacity duration-200"></div>
+                    <span class="text-slate-800 font-black text-xs z-10 select-none">TAP / SCRUB!</span>
+                </div>
+            `;
+            let opacity = 0.8;
+            const stain = document.getElementById('stain');
+            const plate = document.getElementById('plate');
+
+            plate.onclick = () => {
+                opacity -= 0.15;
+                sfx.clean();
+                stain.style.opacity = Math.max(0, opacity);
+                updateMgProgress(((0.8 - opacity) / 0.8) * 100);
+            };
+        }
+
+        function setupLaundrySortMiniGame(container) {
+            container.innerHTML = `
+                <div class="flex justify-around items-center w-full h-full p-4">
+                    <div id="laundry-item" class="w-20 h-20 bg-pink-500 rounded-2xl shadow-lg flex items-center justify-center text-3xl font-bold cursor-pointer animate-bounce">
+                        👕
+                    </div>
+                </div>
+            `;
+
+            let itemCount = 0;
+            const maxItems = 5;
+            const item = document.getElementById('laundry-item');
+
+            item.onclick = () => {
+                sfx.clean();
+                itemCount++;
+                updateMgProgress((itemCount / maxItems) * 100);
+            };
+        }
+
+        function setupTrashRecycleMiniGame(container) {
+            container.innerHTML = `
+                <div class="flex flex-col items-center justify-between h-full py-6">
+                    <div id="recycle-item" class="text-6xl cursor-pointer hover:scale-125 transition-transform">
+                        🍾
+                    </div>
+                    <div class="bg-emerald-600 text-white font-black px-6 py-2 rounded-xl shadow-md border-2 border-emerald-300 text-xs">
+                        ♻️ RECYCLE BIN
+                    </div>
+                </div>
+            `;
+            const items = ['🍾', '📰', '🥫', '📦', '🥤'];
+            let collected = 0;
+            const recItem = document.getElementById('recycle-item');
+
+            recItem.onclick = () => {
+                sfx.clean();
+                collected++;
+                updateMgProgress((collected / items.length) * 100);
+                if (collected < items.length) {
+                    recItem.innerText = items[collected];
+                }
+            };
+        }
+
+        /* =========================================================================
+           9. VICTORY & RESET
+           ========================================================================= */
+        function showVictoryModal() {
+            document.getElementById('final-aura').innerText = gameState.aura;
+            document.getElementById('victory-modal').classList.remove('hidden');
+        }
+
+        function resetGame() {
+            gameState.aura = 100;
+            gameState.choresCompleted = 0;
+            gameState.currentRoomIdx = 0;
+            
+            Object.keys(gameState.chores).forEach(key => {
+                gameState.chores[key].done = false;
+                taskMarkers[key].group.visible = true;
+            });
+
+            updateTaskListUI();
+
+            document.getElementById('aura-score').innerText = gameState.aura;
+            document.getElementById('chores-count').innerText = "0 / 4 Chores";
+            document.getElementById('victory-modal').classList.add('hidden');
+
+            playerPos.set(-4.5, 1.5, -4.5);
+            yaw = -Math.PI / 4;
+            pitch = 0;
+        }
+
+        /* =========================================================================
+           10. ANIMATION LOOP
+           ========================================================================= */
+        function animate() {
+            requestAnimationFrame(animate);
+
+            updatePlayerMovement();
+
+            // Door swinging animation
+            Object.keys(doors).forEach(id => {
+                const d = doors[id];
+                if (d.open && Math.abs(d.pivot.rotation.y - d.targetAngle) > 0.02) {
+                    d.pivot.rotation.y += (d.targetAngle - d.pivot.rotation.y) * 0.08;
+                }
+            });
+
+            // Rotate Chore Station markers
+            Object.keys(taskMarkers).forEach(key => {
+                const marker = taskMarkers[key];
+                if (marker.group.visible) {
+                    marker.box.rotation.y += 0.03;
+                    marker.box.position.y = 1.0 + Math.sin(Date.now() * 0.004) * 0.12;
+                }
+            });
+
+            renderer.render(scene, camera);
+        }
+
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        window.onload = () => {
+            animate();
+        };
+    </script>
+</body>
+</html>
